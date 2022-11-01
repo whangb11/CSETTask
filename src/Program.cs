@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Numerics;
@@ -125,12 +125,14 @@ namespace Nms
             Gwindow.indiceDatas=new List<uint> { };
             checkerBoard = new CheckerBoardEA(10, 10);
         }
+        
+        
 
         unsafe protected override void OnLoad()
         {
 
             base.OnLoad();
-
+            
             GLFW.SetWindowSizeLimits(base.WindowPtr,960,720,960,720);
             GL.ClearColor(0.3f, 0.3f, 0.3f, 1.0f);
             
@@ -297,14 +299,19 @@ namespace Nms
         {
             return this.location;
         }
+
+        public bool RectiveColiCheck(float x,float y)
+        {
+            return true; 
+        }
     }
 
     public class CheckerBoardEA
     {
         public List<List<Piece>> pieces;
 
-        private int row;
-        private int col;
+        private readonly int row;
+        private readonly int col;
         const int mxx = 600;
         const int mxy = 600;
         public CheckerBoardEA(int row,int col)//row横排，col竖排
