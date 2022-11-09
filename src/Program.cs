@@ -7,7 +7,6 @@ using OpenTK.Graphics.OpenGL4;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
-using OpenTK.Compute.OpenCL;
 using System.Threading.Channels;
 
 namespace Nms
@@ -116,14 +115,14 @@ namespace Nms
         public List<BaseUnit> Units;
         int VertexArrayObject;
 
-        CheckerBoardEA checkerBoard;
+        UI ui;
         public Gwindow(int width, int height, string title) : base(GameWindowSettings.Default, new NativeWindowSettings() { Size = (width, height), Title = title })
         {
             Gwindow.width = width;
             Gwindow.height = height;
             Gwindow.vertexDatas=new List<float> { };
             Gwindow.indiceDatas=new List<uint> { };
-            checkerBoard = new CheckerBoardEA(10, 10);
+            ui = new UI(720, 720, 7, 7);
         }
         
         
@@ -151,8 +150,8 @@ namespace Nms
         protected override void OnRenderFrame(FrameEventArgs e)
         {
             base.OnRenderFrame(e);
+            ui.Render();
 
-            checkerBoard.Render();
             vertices = Gwindow.vertexDatas.ToArray();
             indices= Gwindow.indiceDatas.ToArray();
 
@@ -185,13 +184,18 @@ namespace Nms
             {
                 Close();
             }
+            
+            if (KeyboardState.IsKeyPressed(Keys.Z))
+            {
+                ui.Undo();
+            }
 
             if (MouseState.IsButtonPressed(MouseButton.Left))
             {
-                checkerBoard.Activate(MouseState.X,MouseState.Y);
+                ui.Activate(MouseState.X, MouseState.Y);
             }
 
-            checkerBoard.Frame();
+            ui.Frame();
         }
 
         protected override void OnResize(ResizeEventArgs e)
@@ -215,7 +219,7 @@ namespace Nms
 
     public class BaseUnit
     {
-        protected Vector2 location;
+        public Vector2 location;
         protected Vector3 color;
         protected Vector2 velocity;
         protected Vector2 accelerate;
@@ -236,9 +240,9 @@ namespace Nms
             this.RawFrame();
         }
 
-        public virtual void Activate()
+        public virtual int Activate()
         {
-
+            return 0;
         }
         
         public virtual void Render()
@@ -302,85 +306,189 @@ namespace Nms
 
         public bool RectiveColiCheck(float x,float y)
         {
-            return true; 
+            return false;
         }
     }
 
-    public class CheckerBoardEA
+
+
+    public class UI
     {
-        public List<List<Piece>> pieces;
-
-        private readonly int row;
-        private readonly int col;
-        const int mxx = 600;
-        const int mxy = 600;
-        public CheckerBoardEA(int row,int col)//row横排，col竖排
+        public class CheckerBoard
         {
-            this.row = row;
-            this.col = col;
+            
+            public List<List<Piece>> pieces;
+            
 
-            pieces = new List<List<Piece>> { };
-            for(int i= 0; i < row; i++)
+            private readonly int row;
+            private readonly int col;
+            private readonly int mxx = 720;
+            private readonly int mxy = 720;
+            private readonly int pitchX;
+            private readonly int pitchY;
+            public CheckerBoard(int pitchX,int pitchY,int mxx,int mxy,int row,int col)//row横排，col竖排
             {
-                pieces.Add(new List<Piece> { });
-                for(int j=0; j < col; j++)
+                this.row = row;
+                this.col = col;
+
+                this.mxx = mxx;
+                this.mxy = mxy;
+
+                this.pitchX = pitchX;
+                this.pitchY = pitchY;
+
+                pieces = new List<List<Piece>> { };
+                for(int i= 0; i < row; i++)
                 {
-                    pieces[i].Add(new Piece(mxx / (row * 2) + mxx / row * i - mxx / 2, mxy / (col * 2) + mxx / col * j - mxy / 2, Convert.ToInt32(mxx / row * 0.9 / 2), Convert.ToInt32(mxy / row * 0.9 / 2)));
+                    pieces.Add(new List<Piece> { });
+                    for(int j=0; j < col; j++)
+                    {
+                        pieces[i].Add(new Piece(mxx / (row * 2) + mxx / row * i - mxx / 2 + pitchX, mxy / (col * 2) + mxx / col * j - mxy / 2 + pitchY, Convert.ToInt32(mxx / row * 0.9 / 2), Convert.ToInt32(mxy / row * 0.9 / 2)));
+                    }
                 }
             }
+
+            public void Frame()
+            {
+                for(int i = 0; i < pieces.Count; i++)
+                {
+                    for(int j = 0; j < pieces[i].Count; j++)
+                    {
+                        pieces[i][j].Frame();
+                    }
+                }
+            }
+
+            public void Render()
+            {
+                for (int i = 0; i < pieces.Count; i++)
+                {
+                    for (int j = 0; j < pieces[i].Count; j++)
+                    {
+                        pieces[i][j].Render();
+                    }
+                }
+            }
+
+            enum ACTIVATE_RESULT
+            {
+                FAILURE,
+                SUCCESS
+            }
+            public int Activate(float cx,float cy)
+            {
+                Console.WriteLine("mouseClick at("+Convert.ToString(cx)+","+Convert.ToString(cy)+")");
+                for(int i=0; i<pieces.Count; i++)
+                {
+                    for(int j = 0; j < pieces[i].Count; j++)
+                    {
+                        if (Math.Abs(cx) < mxx && Math.Abs(cy) < mxy && Math.Abs(pieces[i][j].Location().X - cx) < mxx / row / 2 && Math.Abs(pieces[i][j].Location().Y - cy) < mxy / col / 2)
+                        {
+                            pieces[i][j].Activate();
+                            Console.WriteLine("acitvate piece in row" + Convert.ToString(i + 1) + "col" + Convert.ToString(j + 1));
+                            if (i != 0) pieces[i - 1][j].Activate();            //左
+                            if (j != 0) pieces[i][j - 1].Activate();            //上
+                            if (i != row - 1) pieces[i + 1][j].Activate();      //右
+                            if (j != col - 1) pieces[i][j + 1].Activate();      //下
+                            Console.WriteLine("as a state of " + Convert.ToString(pieces[i][j].state));
+                        }
+                    }
+                }
+                int H = 0;
+                for (int i = 0; i < pieces.Count; i++)
+                {
+                    for (int j = 0; j < pieces.Count; j++)
+                    {
+                        if (pieces[i][j].state == pieces[0][0].state)
+                            H++;
+                    }
+                }
+
+                if (H == row * col)
+                    return (int)ACTIVATE_RESULT.SUCCESS;
+                else
+                    return (int)ACTIVATE_RESULT.FAILURE;
+            }
+
+            public void Shuffle(int times)
+            {
+                Random rand = new Random();
+                for(int i=0; i<times; i++)
+                {
+                    Activate(rand.Next(0 - mxx / 2 + this.pitchX, (mxx / 2) + this.pitchX), rand.Next(0 - mxy / 2 + this.pitchY, mxy / 2 + this.pitchY));
+                }
+            }
+        }
+
+        List<Vector2> activationRecord;
+        UI.CheckerBoard checkerBoard;
+        Bottom.InGame.ProcessBar processBar;
+        
+        public UI(int mxx,int mxy,int row,int col)
+        {
+            checkerBoard=new CheckerBoard(120,0,mxx,mxy,row,col);
+            checkerBoard.Shuffle(100);
+
+            processBar = new Bottom.InGame.ProcessBar(-260, 0, 18, Gwindow.height / 2);
+            processBar.maxProcess = row * col;
+
+            activationRecord = new List<Vector2>();
         }
 
         public void Frame()
         {
-            for(int i = 0; i < pieces.Count; i++)
+            checkerBoard.Frame();
+
+            int H = 0;
+            for(int i = 0; i < checkerBoard.pieces.Count; i++)
             {
-                for(int j = 0; j < pieces.Count; j++)
+                for(int j = 0; j < checkerBoard.pieces[i].Count; j++)
                 {
-                    pieces[i][j].Frame();
+                    H += (checkerBoard.pieces[i][j].state+1)/2;
                 }
             }
+
+            processBar.currProcess = H;
+            processBar.Frame();
         }
 
         public void Render()
         {
-            for (int i = 0; i < pieces.Count; i++)
-            {
-                for (int j = 0; j < pieces.Count; j++)
-                {
-                    pieces[i][j].Render();
-                }
-            }
+            checkerBoard.Render();
+            processBar.Render();
         }
 
         public void Activate(float x,float y)
         {
-
-
+            Console.WriteLine("--------activate--------");
             var cx = x - Gwindow.width / 2;
             var cy = Gwindow.height - y - Gwindow.height / 2;
-            Console.WriteLine("mouseClick at("+Convert.ToString(cx)+","+Convert.ToString(cy)+")");
-            for(int i=0; i<pieces.Count; i++)
+            var result = checkerBoard.Activate(cx, cy);
+            activationRecord.Add(new Vector2(cx,cy));
+            Console.WriteLine("resulting in " + Convert.ToString(result));
+        }
+
+        public void Undo()
+        {
+            if(activationRecord.Count > 0)
             {
-                for(int j=0;j<pieces.Count; j++)
-                {
-                    if (Math.Abs(cx) < mxx && Math.Abs(cy) < mxy && Math.Abs(pieces[i][j].Location().X - cx) < mxx / row / 2 && Math.Abs(pieces[i][j].Location().Y - cy) < mxy / col / 2)
-                    {
-                        pieces[i][j].Activate();
-                        //Console.WriteLine("acitvate piece in row"+Convert.ToString(i)+"col"+Convert.ToString(j));
-                        if (i != 0) pieces[i - 1][j].Activate();            //左
-                        if (j != 0) pieces[i][j - 1].Activate();            //上
-                        if (i != row - 1) pieces[i + 1][j].Activate();      //右
-                        if (j != col - 1) pieces[i][j + 1].Activate();      //下
-                    }
-                }
+                Console.WriteLine("--------undo--------");
+                checkerBoard.Activate(activationRecord[activationRecord.Count-1].X, activationRecord[activationRecord.Count - 1].Y);
+                activationRecord.RemoveAt(activationRecord.Count-1);
             }
+            
         }
     }
-
     public class Piece : BaseUnit
     {
-        Int16 state;
-        
+        public Int16 state;
+        public int flag;
+        enum PROPERTIES
+        {
+            NORMAL,
+            EXPAND,
+        }
+
         public Piece(int x,int y,int lx,int ly)//x,y,x半径,y半径
         {
             RawInit(new Vector2(x, y), new Vector3(0.9f, 0.9f, 0.9f), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2> { });
@@ -390,9 +498,11 @@ namespace Nms
             base.vertices.Add(new Vector2(-lx, ly));
             base.vertices.Add(new Vector2(-lx, -ly));
             base.vertices.Add(new Vector2(lx, -ly));
+
+            this.flag = (int)Piece.PROPERTIES.NORMAL;
         }
 
-        public override void Activate()
+        public override int Activate()
         {
             const float colourPitch= 0.8f;
             this.state *= -1;
@@ -400,13 +510,58 @@ namespace Nms
             base.color.Y += state * colourPitch;
             base.color.Z += state * colourPitch;
 
+            return this.flag;
+        }
+    }
+
+    public class Bottom
+    {
+        enum BOTTOMRESULT
+        {
+            CONTINUE,
+            BACK,
+            BOARDUP,
+            BOARDDOWN
+        }
+        public class Menu
+        {
             
+        }
+
+        public class InGame
+        {
+            public class ProcessBar
+            {
+                public int maxProcess = 1;
+                public int currProcess = 0;
+
+                public BaseUnit upperBar;
+                public BaseUnit lowerBar;
+                public ProcessBar(int x,int y,int lx,int ly)//lx:半x  ly:半y
+                {
+                    upperBar = new BaseUnit(new Vector2(x, Gwindow.height + y), new Vector3(0.1f, 0.1f, 0.1f), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2> { new Vector2(lx, ly), new Vector2(-lx, ly), new Vector2(-lx, -ly), new Vector2(lx, -ly) });
+                    lowerBar = new BaseUnit(new Vector2(x, 0 - Gwindow.height + y), new Vector3(0.9f, 0.9f, 0.9f), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2> { new Vector2(lx, ly), new Vector2(-lx, ly), new Vector2(-lx, -ly), new Vector2(lx, -ly) });
+                }
+                
+                public void Frame()
+                {
+                    upperBar.location.Y = 0;
+                    lowerBar.location.Y = 0 - Gwindow.height + Gwindow.height * currProcess / maxProcess;
+
+                    upperBar.Frame();
+                    lowerBar.Frame();
+                }
+
+                public void Render()
+                {
+                    upperBar.Render();
+                    lowerBar.Render();
+                }
+            }
         }
     }
     unsafe public class App
     {
-        List<BaseUnit> units;
-
         public static void Main()
         {
            using(Gwindow gwindow=new Gwindow(960, 720, "notitle"))
