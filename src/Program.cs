@@ -8,6 +8,11 @@ using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using System.Threading.Channels;
+using OpenTK.Compute.OpenCL;
+using System.Diagnostics;
+using System.Drawing;
+
+
 
 namespace Nms
 {
@@ -83,7 +88,6 @@ namespace Nms
             GL.DeleteProgram(Handle);
         }
 
-
         public void Dispose()
         {
             Dispose(true);
@@ -115,14 +119,16 @@ namespace Nms
         public List<BaseUnit> Units;
         int VertexArrayObject;
 
+
+
         UI ui;
         public Gwindow(int width, int height, string title) : base(GameWindowSettings.Default, new NativeWindowSettings() { Size = (width, height), Title = title })
         {
             Gwindow.width = width;
             Gwindow.height = height;
-            Gwindow.vertexDatas=new List<float> { };
-            Gwindow.indiceDatas=new List<uint> { };
-            ui = new UI(720, 720, 7, 7);
+            Gwindow.vertexDatas=new List<float>();
+            Gwindow.indiceDatas=new List<uint>();
+            ui = new UI(720, 720);
         }
         
         
@@ -190,10 +196,27 @@ namespace Nms
                 ui.Undo();
             }
 
+            if (KeyboardState.IsKeyPressed(Keys.R))
+            {
+                ui.Remake(null);
+            }
+#if DEBUG
+            if (KeyboardState.IsKeyPressed(Keys.Tab))
+            {
+                GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Line);
+            }
+
+            if (KeyboardState.IsKeyPressed(Keys.C))
+            {
+                ui.Remake(++ui.difficult);
+            }
+#endif
             if (MouseState.IsButtonPressed(MouseButton.Left))
             {
                 ui.Activate(MouseState.X, MouseState.Y);
             }
+
+            
 
             ui.Frame();
         }
@@ -303,14 +326,7 @@ namespace Nms
         {
             return this.location;
         }
-
-        public bool RectiveColiCheck(float x,float y)
-        {
-            return false;
-        }
     }
-
-
 
     public class UI
     {
@@ -322,11 +338,12 @@ namespace Nms
 
             private readonly int row;
             private readonly int col;
-            private readonly int mxx = 720;
-            private readonly int mxy = 720;
-            private readonly int pitchX;
-            private readonly int pitchY;
-            public CheckerBoard(int pitchX,int pitchY,int mxx,int mxy,int row,int col)//row横排，col竖排
+            private readonly float mxx = 720;
+            private readonly float mxy = 720;
+            private readonly float pitchX;
+            private readonly float pitchY;
+            Random rand = new Random(unchecked((int)System.DateTime.UtcNow.Ticks));
+            public CheckerBoard(float pitchX, float pitchY, float mxx, float mxy,int row,int col)//row横排，col竖排
             {
                 this.row = row;
                 this.col = col;
@@ -343,7 +360,7 @@ namespace Nms
                     pieces.Add(new List<Piece> { });
                     for(int j=0; j < col; j++)
                     {
-                        pieces[i].Add(new Piece(mxx / (row * 2) + mxx / row * i - mxx / 2 + pitchX, mxy / (col * 2) + mxx / col * j - mxy / 2 + pitchY, Convert.ToInt32(mxx / row * 0.9 / 2), Convert.ToInt32(mxy / row * 0.9 / 2)));
+                        pieces[i].Add(new Piece(mxx / (row * 2) + mxx / row * i - mxx / 2 + pitchX, mxy / (col * 2) + mxx / col * j - mxy / 2 + pitchY, (float)(mxx / row * 0.9 / 2), (float)(mxy / row * 0.9 / 2)));
                     }
                 }
             }
@@ -370,7 +387,7 @@ namespace Nms
                 }
             }
 
-            enum ACTIVATE_RESULT
+            public enum ACTIVATE_RESULT
             {
                 FAILURE,
                 SUCCESS
@@ -411,28 +428,81 @@ namespace Nms
             }
 
             public void Shuffle(int times)
-            {
-                Random rand = new Random();
+            {   
                 for(int i=0; i<times; i++)
                 {
-                    Activate(rand.Next(0 - mxx / 2 + this.pitchX, (mxx / 2) + this.pitchX), rand.Next(0 - mxy / 2 + this.pitchY, mxy / 2 + this.pitchY));
+                    Activate(rand.Next((int)(0 - mxx / 2 + this.pitchX),(int)((mxx / 2) + this.pitchX)), rand.Next((int)(0 - mxy / 2 + this.pitchY), (int)(mxy / 2.0f + this.pitchY)));
                 }
             }
         }
 
+        public class MultipleEP : BaseUnit
+        {
+            int edges;
+            float size;
+            public MultipleEP(float x, float y, float size,int n)
+            {
+                this.edges = n + 3;
+                this.size = size;
+                RawInit(new Vector2(x, y), new Vector3(0.9f, 0.9f, 0.9f), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2>());
+
+                for(int i=0; i<this.edges; i++)
+                {
+                    base.vertices.Add(new Vector2((float)(size * Math.Cos(2 * Math.PI / n * i + Math.PI / 2)), (float)(size * Math.Sin(2 * Math.PI / n * i + Math.PI / 2))));
+                }
+            }
+
+            public void SetValue(int n)
+            {
+                this.edges = n + 3;
+                base.vertices.Clear();
+                for (int i = 0; i < this.edges; i++)
+                {
+                    base.vertices.Add(new Vector2((float)(this.size * Math.Cos(2 * Math.PI / n * i + Math.PI / 2)), (float)(this.size * Math.Sin(2 * Math.PI / n * i + Math.PI / 2))));
+                }
+            }
+        }
+        
         List<Vector2> activationRecord;
         UI.CheckerBoard checkerBoard;
         Bottom.InGame.ProcessBar processBar;
-        
-        public UI(int mxx,int mxy,int row,int col)
+
+        int mxx;
+        int mxy;
+#if DEBUG 
+        public int difficult;
+#else
+        int difficult;
+#endif
+
+        List<UI.MultipleEP> culmulators;
+        BaseUnit lBgU;
+        BaseUnit lBgD;
+        int imoperatableCountDown = 0;
+        int remakeCountDown = -1;
+
+        public UI(int mxx,int mxy)
         {
-            checkerBoard=new CheckerBoard(120,0,mxx,mxy,row,col);
+            this.mxx = mxx;
+            this.mxy = mxy;
+            difficult = 3;
+
+            checkerBoard=new CheckerBoard(120,0,this.mxx,this.mxy,difficult,difficult);
             checkerBoard.Shuffle(100);
 
             processBar = new Bottom.InGame.ProcessBar(-260, 0, 18, Gwindow.height / 2);
-            processBar.maxProcess = row * col;
+            processBar.maxProcess = difficult * difficult;
 
             activationRecord = new List<Vector2>();
+            culmulators = new List<MultipleEP>();
+            for (int i = 1; i <= 3; i++)
+            {
+                //culmulators.Add(new MultipleEP(i * 50 - Gwindow.width / 2, 100, 20, 0));
+                culmulators.Add(new MultipleEP(0, 0, 20, 0));
+            }
+
+            lBgU = new BaseUnit(new Vector2(-390, Gwindow.height/2-100), new Vector3(0.9f, 0.9f, 0.9f), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2> { new Vector2(100, 230), new Vector2(-100, 230), new Vector2(-100, -230), new Vector2(100, -230) });
+            lBgD = new BaseUnit(new Vector2(-390, (0-Gwindow.height)/2), new Vector3(0.9f, 0.9f, 0.9f), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2> { new Vector2(100, 440), new Vector2(-100, 440), new Vector2(-100, -440), new Vector2(100, -440) });
         }
 
         public void Frame()
@@ -450,22 +520,56 @@ namespace Nms
 
             processBar.currProcess = H;
             processBar.Frame();
+            for(int i=0;i<culmulators.Count; i++)
+            {
+                culmulators[i].Frame();
+            }
+
+            if (remakeCountDown > 0)
+                remakeCountDown--;
+            if (remakeCountDown == 0)
+            {
+                Remake(++difficult);
+                remakeCountDown = -1;
+            }
+                
+
+            if(imoperatableCountDown > 0)
+                imoperatableCountDown--;
+
+            lBgD.Frame();
+            lBgU.Frame();
         }
 
         public void Render()
         {
             checkerBoard.Render();
             processBar.Render();
+            for (int i = 0; i < culmulators.Count; i++)
+            {
+                culmulators[i].Render();
+            }
+            lBgD.Render();
+            lBgU.Render();
         }
 
-        public void Activate(float x,float y)
+        public void Activate(float x, float y)
         {
-            Console.WriteLine("--------activate--------");
-            var cx = x - Gwindow.width / 2;
-            var cy = Gwindow.height - y - Gwindow.height / 2;
-            var result = checkerBoard.Activate(cx, cy);
-            activationRecord.Add(new Vector2(cx,cy));
-            Console.WriteLine("resulting in " + Convert.ToString(result));
+            if (imoperatableCountDown <= 0)
+            {
+                Console.WriteLine("\n\n\n--------activate--------");
+                var cx = x - Gwindow.width / 2;
+                var cy = Gwindow.height - y - Gwindow.height / 2;
+                var result = checkerBoard.Activate(cx, cy);
+                activationRecord.Add(new Vector2(cx, cy));
+                Console.WriteLine("resulting in " + Convert.ToString(result));
+
+                if (result == (int)CheckerBoard.ACTIVATE_RESULT.SUCCESS)
+                {
+                    remakeCountDown = 60;
+                    imoperatableCountDown = 60;
+                }
+            }
         }
 
         public void Undo()
@@ -478,7 +582,21 @@ namespace Nms
             }
             
         }
+
+        public void Remake(int? complexy)
+        {
+            if (complexy.HasValue == false)
+                complexy = this.difficult;
+            difficult=(int)complexy;
+
+            activationRecord.Clear();
+            checkerBoard = new CheckerBoard(120, 0, mxx, mxy, difficult, difficult);
+
+            processBar.maxProcess = difficult*difficult;
+            checkerBoard.Shuffle(difficult*(int)Math.Sqrt(difficult));
+        }
     }
+
     public class Piece : BaseUnit
     {
         public Int16 state;
@@ -489,9 +607,9 @@ namespace Nms
             EXPAND,
         }
 
-        public Piece(int x,int y,int lx,int ly)//x,y,x半径,y半径
+        public Piece(float x,float y,float lx,float ly)//x,y,x半径,y半径
         {
-            RawInit(new Vector2(x, y), new Vector3(0.9f, 0.9f, 0.9f), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2> { });
+            RawInit(new Vector2(x, y), new Vector3(0.9f, 0.9f, 0.9f), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2>());
             this.state = 1;
 
             base.vertices.Add(new Vector2(lx, ly));
@@ -560,17 +678,18 @@ namespace Nms
             }
         }
     }
+
     unsafe public class App
     {
         public static void Main()
         {
-           using(Gwindow gwindow=new Gwindow(960, 720, "notitle"))
+            const string name = "Fleep";
+            const string version = "0.1";
+            using (Gwindow gwindow=new Gwindow(960, 720,name+version))
             {
                 gwindow.Run();
             }
             
         }
     }
-    
-
 }
