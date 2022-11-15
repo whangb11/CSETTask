@@ -1,2 +1,4 @@
 # CSETTask
-__PRIVATE__
+__PRIVATE__ 
+
+Used libraries: [OpenTK](github.com/OpenTK)
