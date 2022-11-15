@@ -1,4 +1,4 @@
 # CSETTask
-__PRIVATE__ 
+__Under wtfpl__ 
 
 Used libraries: [OpenTK](https://github.com/OpenTK)
