@@ -191,12 +191,12 @@ namespace Nms
                 Close();
             }
             
-            if (KeyboardState.IsKeyPressed(Keys.Z))
+            if (ui.imoperatableCountDown <= 0 && KeyboardState.IsKeyPressed(Keys.Z))
             {
                 ui.Undo();
             }
 
-            if (KeyboardState.IsKeyPressed(Keys.R))
+            if (ui.imoperatableCountDown <= 0 && KeyboardState.IsKeyPressed(Keys.R))
             {
                 ui.Remake(null);
             }
@@ -206,7 +206,7 @@ namespace Nms
                 GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Line);
             }
 
-            if (KeyboardState.IsKeyPressed(Keys.C))
+            if (ui.imoperatableCountDown <= 0 && KeyboardState.IsKeyPressed(Keys.C))
             {
                 ui.Remake(++ui.difficult);
             }
@@ -489,8 +489,8 @@ namespace Nms
         List<UI.MultipleEP> culmulators;
         BaseUnit lBgU;
         BaseUnit lBgD;
-        int imoperatableCountDown = 0;
-        int remakeCountDown = -1;
+        public int imoperatableCountDown = 0;
+        public int remakeCountDown = -1;
 
         public UI(int mxx,int mxy)
         {
@@ -600,7 +600,7 @@ namespace Nms
 
                 if (remakeBottom.CheckColli(cx, cy))
                 {
-                    Remake(difficult);
+                    Remake(null);
                 }
             }
         }
@@ -807,7 +807,7 @@ namespace Nms
         public static void Main()
         {
             const string name = "Fleep";
-            const string version = "0.1";
+            const string version = "1.1";
             using (Gwindow gwindow=new Gwindow(960, 720,name+version))
             {
                 gwindow.Run();
