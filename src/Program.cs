@@ -15,7 +15,7 @@ using System.Drawing;
 
 
 namespace Nms
-{
+{ 
     public class Shader
     {
         public int Handle;
@@ -246,8 +246,12 @@ namespace Nms
         protected Vector3 color;
         protected Vector2 velocity;
         protected Vector2 accelerate;
-        protected List<Vector2> vertices;
+        public List<Vector2> vertices;
         protected UInt64 timer = 0;
+
+        public static readonly Vector3 White = new(0.9f, 0.9f, 0.9f);
+        public static readonly Vector3 Black = new(0.1f, 0.1f, 0.1f);
+
         protected BaseUnit()
         {
             RawInit(new Vector2(0, 0), new Vector3(0, 0, 0), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2> { });
@@ -256,6 +260,11 @@ namespace Nms
         public BaseUnit(Vector2 location, Vector3 color, Vector2 velocity, Vector2 accelerate, List<Vector2> vertices)
         {
             RawInit(location, color, velocity, accelerate, vertices);
+        }
+
+        public BaseUnit(Vector2 location, Vector3 color, List<Vector2> vertices)
+        {
+            RawInit(location, color, new Vector2(0, 0), new Vector2(0, 0), vertices);
         }
 
         public virtual void Frame()
@@ -466,6 +475,8 @@ namespace Nms
         List<Vector2> activationRecord;
         UI.CheckerBoard checkerBoard;
         Bottom.InGame.ProcessBar processBar;
+        Bottom.InGame.UndoBottom undoBottom;
+        Bottom.InGame.RemakeBottom remakeBottom;
 
         int mxx;
         int mxy;
@@ -497,12 +508,15 @@ namespace Nms
             culmulators = new List<MultipleEP>();
             for (int i = 1; i <= 3; i++)
             {
-                //culmulators.Add(new MultipleEP(i * 50 - Gwindow.width / 2, 100, 20, 0));
-                culmulators.Add(new MultipleEP(0, 0, 20, 0));
+                culmulators.Add(new MultipleEP(i * 50 - Gwindow.width / 2, 100, 20, 0));
+                //culmulators.Add(new MultipleEP(0, 0, 20, 0));
             }
 
-            lBgU = new BaseUnit(new Vector2(-390, Gwindow.height/2-100), new Vector3(0.9f, 0.9f, 0.9f), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2> { new Vector2(100, 230), new Vector2(-100, 230), new Vector2(-100, -230), new Vector2(100, -230) });
-            lBgD = new BaseUnit(new Vector2(-390, (0-Gwindow.height)/2), new Vector3(0.9f, 0.9f, 0.9f), new Vector2(0, 0), new Vector2(0, 0), new List<Vector2> { new Vector2(100, 440), new Vector2(-100, 440), new Vector2(-100, -440), new Vector2(100, -440) });
+            lBgU = new BaseUnit(new Vector2(-390, Gwindow.height/2), new Vector3(0.9f, 0.9f, 0.9f), new List<Vector2> { new Vector2(100, 230), new Vector2(-80, 230), new Vector2(-80, -130), new Vector2(100, -130) });
+            lBgD = new BaseUnit(new Vector2(-390, (0-Gwindow.height)/2), new Vector3(0.9f, 0.9f, 0.9f), new List<Vector2> { new Vector2(100, 440), new Vector2(-80, 440), new Vector2(-80, -440), new Vector2(100, -440) });
+
+            undoBottom = new Bottom.InGame.UndoBottom(-380, 120, 90, 30, 13, 13);
+            remakeBottom = new Bottom.InGame.RemakeBottom(-380, 190, 90, 30, 13, 10, 250);
         }
 
         public void Frame()
@@ -539,6 +553,8 @@ namespace Nms
 
             lBgD.Frame();
             lBgU.Frame();
+
+            undoBottom.Frame();
         }
 
         public void Render()
@@ -551,6 +567,9 @@ namespace Nms
             }
             lBgD.Render();
             lBgU.Render();
+
+            undoBottom.Render();
+            remakeBottom.Render();
         }
 
         public void Activate(float x, float y)
@@ -560,14 +579,28 @@ namespace Nms
                 Console.WriteLine("\n\n\n--------activate--------");
                 var cx = x - Gwindow.width / 2;
                 var cy = Gwindow.height - y - Gwindow.height / 2;
-                var result = checkerBoard.Activate(cx, cy);
-                activationRecord.Add(new Vector2(cx, cy));
-                Console.WriteLine("resulting in " + Convert.ToString(result));
-
-                if (result == (int)CheckerBoard.ACTIVATE_RESULT.SUCCESS)
+                Console.WriteLine("at location(" + cx + "," + cy + ")");
+                if (cx > -250)   
                 {
-                    remakeCountDown = 60;
-                    imoperatableCountDown = 60;
+                    var result = checkerBoard.Activate(cx, cy);
+                    activationRecord.Add(new Vector2(cx, cy));
+                    Console.WriteLine("resulting in " + Convert.ToString(result));
+
+                    if (result == (int)CheckerBoard.ACTIVATE_RESULT.SUCCESS)
+                    {
+                        remakeCountDown = 60;
+                        imoperatableCountDown = 60;
+                    }
+                }
+                
+                if (undoBottom.CheckColli(cx, cy))
+                {
+                    Undo();
+                }
+
+                if (remakeBottom.CheckColli(cx, cy))
+                {
+                    Remake(difficult);
                 }
             }
         }
@@ -593,7 +626,7 @@ namespace Nms
             checkerBoard = new CheckerBoard(120, 0, mxx, mxy, difficult, difficult);
 
             processBar.maxProcess = difficult*difficult;
-            checkerBoard.Shuffle(difficult*(int)Math.Sqrt(difficult));
+            checkerBoard.Shuffle(difficult*difficult);
         }
     }
 
@@ -674,6 +707,96 @@ namespace Nms
                 {
                     upperBar.Render();
                     lowerBar.Render();
+                }
+            }
+
+            public class UndoBottom
+            {
+                BaseUnit bg;
+                BaseUnit shape;
+                float x;
+                float y;
+                float d;
+                float h;
+
+
+                public UndoBottom(float x,float y,float d,float h,float dt,float ht)
+                {
+                    this.x = x;
+                    this.y = y;
+                    this.d = d;
+                    this.h = h;
+
+
+                    bg = new BaseUnit(new Vector2(x, y),BaseUnit.White, new Vector2(0, 0), new Vector2(0, 0), new List<Vector2> { new Vector2(d, h), new Vector2(0 - d, h), new Vector2(0 - d, 0 - h), new Vector2(d, 0 - h) });
+                    shape = new BaseUnit(new Vector2(x + dt / 2, y), BaseUnit.Black, new List<Vector2> { new Vector2(0, ht), new Vector2(0 - dt, 0), new Vector2(0, -ht) });
+                }
+
+                public void Frame()
+                {
+                    bg.Frame();
+                    shape.Frame();
+                }
+
+                public void Render()
+                {
+                    bg.Render();
+                    shape.Render();
+                }
+
+                public bool CheckColli(float x,float y)
+                {
+                    return (Math.Abs(x - this.x) <= d && Math.Abs(y - this.y) <= h);
+                }
+            }
+
+            public class RemakeBottom
+            {
+                BaseUnit bg;
+                BaseUnit shapea;
+                BaseUnit shapeb;
+                float x;
+                float y;
+                float d;
+                float h;
+
+
+                public RemakeBottom(float x, float y, float d, float h, float r1,float r2,int edgeCount=100)
+                {
+                    this.x = x;
+                    this.y = y;
+                    this.d = d;
+                    this.h = h;
+
+
+                    bg = new BaseUnit(new Vector2(x, y), BaseUnit.White, new List<Vector2> { new Vector2(d, h), new Vector2(0 - d, h), new Vector2(0 - d, 0 - h), new Vector2(d, 0 - h) });
+                    shapea = new BaseUnit(new Vector2(x, y), BaseUnit.Black, new List<Vector2> ());
+                    shapeb = new BaseUnit(new Vector2(x, y), BaseUnit.White, new List<Vector2>());
+
+                    for(int i=0; i < edgeCount; i++)
+                    {
+                        shapea.vertices.Add(new Vector2((float)Math.Cos(Math.PI * 2 * i / edgeCount) * r1, (float)Math.Sin(Math.PI * 2 * i / edgeCount) * r1));
+                        shapeb.vertices.Add(new Vector2((float)Math.Cos(Math.PI * 2 * i / edgeCount) * r2, (float)Math.Sin(Math.PI * 2 * i / edgeCount) * r2));
+                    }
+                }
+
+                public void Frame()
+                {
+                    bg.Frame();
+                    shapea.Frame();
+                    shapeb.Frame();
+                }
+
+                public void Render()
+                {
+                    bg.Render();
+                    shapea.Render();
+                    shapeb.Render();
+                }
+
+                public bool CheckColli(float x, float y)
+                {
+                    return (Math.Abs(x - this.x) <= d && Math.Abs(y - this.y) <= h);
                 }
             }
         }
